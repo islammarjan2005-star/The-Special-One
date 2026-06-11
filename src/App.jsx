@@ -92,7 +92,7 @@ export default function App() {
             🏟️ Matchday
           </button>
           <button className={screen === 'market' ? 'active' : ''} onClick={() => setScreen('market')}>
-            💸 Market{game.windowOpen ? <span className="badge">OPEN</span> : null}
+            💸 Market{game.windowOpen ? <span className="badge">OPEN</span> : game.pendingDeals.length ? <span className="badge">{game.pendingDeals.length}</span> : null}
           </button>
           <button className={screen === 'table' ? 'active' : ''} onClick={() => setScreen('table')}>
             📊 Table

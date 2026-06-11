@@ -4,13 +4,13 @@
 
 import { CLUBS, STARTER_CLUB_IDS, DERBIES } from './data.js';
 import { createRng, next, randInt, pick } from './rng.js';
-import { makeSquad, resetPlayerIds, peekPlayerId, fmtMoney, valueOf } from './player.js';
+import { makeRealPlayer, resetPlayerIds, peekPlayerId, fmtMoney, valueOf } from './player.js';
 import { generateFixtures, emptyTableRow, applyResult, sortedTable, positionOf } from './league.js';
 import {
   startMatch, simulateHalf, applyIntervention, resolveMatchEffects, updateForm,
   quickSim, pickBestXI, teamStrength, validateXI,
 } from './match.js';
-import { generateMarket, wageBill, canBuy, canSell, gemEligible, drawGem, maybeAiBid } from './transfers.js';
+import { wageBill, feeFor, canBuy, canSell, gemEligible, drawGem, maybeAiBid } from './transfers.js';
 import { generateHeadline, headlineTypeForResult } from './headlines.js';
 
 export const TOTAL_WEEKS = 38;
@@ -25,8 +25,8 @@ export function newGame(clubId, seed = Date.now() & 0xffffffff) {
   const rng = createRng(seed);
   const clubs = {};
   for (const def of CLUBS) {
-    const squad = makeSquad(rng, def.baseRating);
-    // Scale generated wages so every club starts at ~85% of its wage
+    const squad = def.squad.map((p) => makeRealPlayer(rng, p));
+    // Scale derived wages so every club starts at ~85% of its wage
     // budget — headroom exists, but it's proportional to the budget, so
     // broke clubs have very little of it.
     const bill = squad.reduce((s, p) => s + p.wage, 0);
@@ -37,7 +37,7 @@ export function newGame(clubId, seed = Date.now() & 0xffffffff) {
   const table = {};
   for (const def of CLUBS) table[def.id] = emptyTableRow(def.id);
   const game = {
-    version: 1,
+    version: 2,
     seed,
     rng,
     clubId,
@@ -48,7 +48,7 @@ export function newGame(clubId, seed = Date.now() & 0xffffffff) {
     table,
     results: [],
     inbox: [{ type: 'board', text: `Welcome to ${clubs[clubId].name}. The board expects a finish around ${ordinal(clubs[clubId].expectation)}. Don't let us down.` }],
-    market: [],
+    pendingDeals: [],
     windowOpen: false,
     gem: { available: false, used: false, result: null },
     pendingBid: null,
@@ -94,7 +94,7 @@ export function isWindowWeek(game) {
 
 function openWindow(game) {
   game.windowOpen = true;
-  game.market = generateMarket(game.rng);
+  executePendingDeals(game);
   const club = myClub(game);
   game.gem.available = !game.gem.usedThisWindow && gemEligible(club, club.squad, Object.values(game.clubs));
   game.gem.usedThisWindow = false;
@@ -115,33 +115,130 @@ function openWindow(game) {
 
 function closeWindow(game) {
   game.windowOpen = false;
-  game.market = [];
   game.pendingBid = null;
   game.gem.available = false;
 }
 
-export function buyPlayer(game, marketPlayer) {
-  const club = myClub(game);
-  const reason = canBuy(marketPlayer, club, club.squad);
-  if (reason) return reason;
-  club.transferBudget -= marketPlayer.value;
-  game.stats.spent += marketPlayer.value;
-  game.stats.signings.push({ name: marketPlayer.name, fee: marketPlayer.value, rating: marketPlayer.rating, id: marketPlayer.id });
-  club.squad.push(marketPlayer);
-  game.market = game.market.filter((p) => p.id !== marketPlayer.id);
+// 'now' = window open, deals complete instantly. 'january' = window shut,
+// deals agreed now complete when the January window opens. null = the
+// January window has been and gone — browse all you like, nobody signs.
+export function dealMode(game) {
+  if (game.ended) return null;
+  if (game.windowOpen) return 'now';
+  if (game.week >= 1 && game.week <= 18) return 'january';
   return null;
 }
 
-export function sellPlayer(game, playerId) {
+export function projectedSquadSize(game) {
+  const buys = game.pendingDeals.filter((d) => d.kind === 'buy').length;
+  const sells = game.pendingDeals.filter((d) => d.kind === 'sell').length;
+  return myClub(game).squad.length + buys - sells;
+}
+
+export function projectedWageBill(game) {
+  let bill = wageBill(myClub(game).squad);
+  for (const d of game.pendingDeals) bill += d.kind === 'buy' ? d.wage : -d.wage;
+  return bill;
+}
+
+function transferIn(game, seller, player, fee) {
+  seller.squad = seller.squad.filter((p) => p.id !== player.id);
+  player.form = 0;
+  player.unsettled = false;
+  myClub(game).squad.push(player);
+  game.stats.signings.push({ name: player.name, fee, rating: player.rating, id: player.id });
+}
+
+// Agree to buy a player from another club. Funds are committed on
+// agreement; the move completes now (window open) or in January.
+export function agreeBuy(game, sellerId, playerId) {
+  const mode = dealMode(game);
+  if (!mode) return 'The transfer window is shut for the season. You can browse, but nobody signs until summer.';
+  const seller = game.clubs[sellerId];
+  const player = seller?.squad.find((p) => p.id === playerId);
+  if (!player) return 'Player no longer available.';
+  if (game.pendingDeals.some((d) => d.playerId === playerId)) return 'You already have a deal agreed for him.';
+  const sellerOutgoing = game.pendingDeals.filter((d) => d.kind === 'buy' && d.fromClubId === sellerId).length;
+  if (seller.squad.length - sellerOutgoing <= 16) return `${seller.short} won't sell — their squad is already stretched.`;
+  const fee = feeFor(player, seller.squad);
   const club = myClub(game);
-  const reason = canSell(club.squad);
-  if (reason) return reason;
+  const err = canBuy({
+    fee,
+    wage: player.wage,
+    budget: club.transferBudget,
+    projectedBill: projectedWageBill(game),
+    wageBudget: club.wageBudget,
+    squadSize: projectedSquadSize(game),
+  });
+  if (err) return err;
+  club.transferBudget -= fee;
+  game.stats.spent += fee;
+  if (mode === 'now') {
+    transferIn(game, seller, player, fee);
+  } else {
+    game.pendingDeals.push({ kind: 'buy', playerId, playerName: player.name, fromClubId: sellerId, fee, wage: player.wage });
+  }
+  return null;
+}
+
+// Agree to sell one of your own players. The fee lands when the deal
+// completes; until January he keeps playing for you.
+export function agreeSell(game, playerId) {
+  const mode = dealMode(game);
+  if (!mode) return 'The transfer window is shut for the season.';
+  const club = myClub(game);
   const player = club.squad.find((p) => p.id === playerId);
   if (!player) return 'Player not found.';
-  club.transferBudget += player.value;
-  game.stats.earned += player.value;
-  club.squad = club.squad.filter((p) => p.id !== playerId);
+  if (game.pendingDeals.some((d) => d.playerId === playerId)) return 'A deal is already agreed for him.';
+  const sizeErr = canSell(projectedSquadSize(game));
+  if (sizeErr) return sizeErr;
+  if (mode === 'now') {
+    club.transferBudget += player.value;
+    game.stats.earned += player.value;
+    club.squad = club.squad.filter((p) => p.id !== playerId);
+  } else {
+    game.pendingDeals.push({ kind: 'sell', playerId, playerName: player.name, fee: player.value, wage: player.wage });
+  }
   return null;
+}
+
+export function cancelDeal(game, playerId) {
+  const deal = game.pendingDeals.find((d) => d.playerId === playerId);
+  if (!deal) return;
+  if (deal.kind === 'buy') {
+    myClub(game).transferBudget += deal.fee;
+    game.stats.spent -= deal.fee;
+  }
+  game.pendingDeals = game.pendingDeals.filter((d) => d !== deal);
+}
+
+// Called when a window opens: queued deals go through (or collapse if the
+// world changed underneath them — player sold elsewhere, squad too thin).
+function executePendingDeals(game) {
+  const club = myClub(game);
+  for (const deal of game.pendingDeals) {
+    if (deal.kind === 'buy') {
+      const seller = game.clubs[deal.fromClubId];
+      const player = seller.squad.find((p) => p.id === deal.playerId);
+      if (player && seller.squad.length > 16) {
+        transferIn(game, seller, player, deal.fee);
+        game.inbox.push({ type: 'bid', text: `Deal done: ${deal.playerName} has arrived from ${seller.short} for ${fmtMoney(deal.fee)}.` });
+      } else {
+        club.transferBudget += deal.fee;
+        game.stats.spent -= deal.fee;
+        game.inbox.push({ type: 'bid', text: `The ${deal.playerName} deal collapsed — your ${fmtMoney(deal.fee)} has been refunded.` });
+      }
+    } else {
+      const player = club.squad.find((p) => p.id === deal.playerId);
+      if (player && club.squad.length > 16) {
+        club.transferBudget += deal.fee;
+        game.stats.earned += deal.fee;
+        club.squad = club.squad.filter((p) => p.id !== deal.playerId);
+        game.inbox.push({ type: 'bid', text: `${deal.playerName} has completed his move away for ${fmtMoney(deal.fee)}.` });
+      }
+    }
+  }
+  game.pendingDeals = [];
 }
 
 export function useGemDraw(game) {
@@ -157,9 +254,9 @@ export function signGem(game) {
   const result = game.gem.result;
   if (!result || result.signed) return 'No gem to sign.';
   const club = myClub(game);
-  if (club.squad.length >= 22) return 'Squad is full (22 players max).';
+  if (projectedSquadSize(game) >= 22) return 'Squad is full (22 players max, counting agreed deals).';
   if (result.player.gemFee > club.transferBudget) return 'Even this fee is beyond your budget.';
-  if (wageBill(club.squad) + result.player.wage > club.wageBudget) return 'No wage headroom even for him.';
+  if (projectedWageBill(game) + result.player.wage > club.wageBudget) return 'No wage headroom even for him.';
   club.transferBudget -= result.player.gemFee;
   game.stats.spent += result.player.gemFee;
   game.stats.signings.push({ name: result.player.name, fee: result.player.gemFee, rating: result.player.rating, id: result.player.id });
@@ -183,7 +280,7 @@ export function respondToBid(game, accept) {
   game.pendingBid = null;
   if (!player) return;
   if (accept) {
-    if (canSell(club.squad)) return; // squad too small — treat as forced reject
+    if (canSell(projectedSquadSize(game))) return; // squad too thin — treat as forced reject
     club.transferBudget += bid.fee;
     game.stats.earned += bid.fee;
     club.squad = club.squad.filter((p) => p.id !== player.id);
@@ -383,4 +480,4 @@ export function seasonReview(game) {
   };
 }
 
-export { wageBill, canBuy, canSell, pickBestXI, teamStrength, sortedTable, positionOf, fmtMoney };
+export { wageBill, feeFor, canBuy, canSell, pickBestXI, teamStrength, sortedTable, positionOf, fmtMoney };

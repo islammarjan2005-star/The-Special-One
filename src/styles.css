@@ -145,6 +145,17 @@ table.league tr.cl { box-shadow: inset 3px 0 0 var(--accent); }
 table.league tr.rel { box-shadow: inset 3px 0 0 var(--danger); }
 
 /* Market */
+input.search {
+  width: 100%;
+  font: inherit;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+input.search::placeholder { color: var(--muted); }
 .market-filters { display: flex; gap: 6px; margin-bottom: 10px; }
 .market-filters button { flex: 1; padding: 7px 0; font-size: 0.8rem; }
 .market-filters button.active { background: var(--accent); color: #06280f; font-weight: 700; }

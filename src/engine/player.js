@@ -52,22 +52,24 @@ export function makePlayer(rng, { position, rating, age, potentialBoost = 0 }) {
   return player;
 }
 
-// Squad shape: 2 GK, 6 DEF, 6 MID, 4 ATT core + a couple of extras.
-export function makeSquad(rng, baseRating) {
-  const slots = [
-    ...Array(2).fill('GK'),
-    ...Array(6).fill('DEF'),
-    ...Array(6).fill('MID'),
-    ...Array(4).fill('ATT'),
-  ];
-  const extraCount = randInt(rng, 0, 4);
-  for (let i = 0; i < extraCount; i++) slots.push(pick(rng, ['DEF', 'MID', 'ATT']));
-  return slots.map((position, i) => {
-    // First-choice players sit near the club's base rating; depth falls off.
-    const depthPenalty = i % 2 === 0 ? 0 : 4;
-    const rating = baseRating - depthPenalty + jitter(rng) * 5;
-    return makePlayer(rng, { position, rating });
-  });
+// A player object from a real-dataset entry {name, position, age, rating}.
+export function makeRealPlayer(rng, data) {
+  const headroom = data.age < 26 ? Math.max(0, Math.round((26 - data.age) * 1.5 * next(rng))) : 0;
+  const player = {
+    id: nextPlayerId++,
+    name: data.name,
+    age: data.age,
+    position: data.position,
+    rating: data.rating,
+    potential: Math.min(95, data.rating + headroom),
+    wage: wageForRating(rng, data.rating),
+    injuryWeeks: 0,
+    form: 0,
+    goals: 0,
+    unsettled: false,
+  };
+  player.value = valueOf(player);
+  return player;
 }
 
 export function isAvailable(player) {

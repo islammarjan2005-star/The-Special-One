@@ -97,6 +97,7 @@ export default function Hub({ game, onKickOff }) {
               <span className="name">
                 {p.name}
                 {p.unsettled ? <span className="unsettled"> · unsettled</span> : null}
+                {game.pendingDeals.some((d) => d.playerId === p.id) ? <span className="unsettled"> · sale agreed</span> : null}
                 {p.injuryWeeks > 0 ? <span className="muted"> · 🚑 {p.injuryWeeks}w</span> : null}
               </span>
               <span className={`rating ${ratingClass(p.rating)}`}>{p.rating}</span>

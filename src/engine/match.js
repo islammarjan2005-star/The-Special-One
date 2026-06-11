@@ -48,11 +48,15 @@ export function pickBestXI(squad) {
       .slice(0, count);
     if (pool.length < count) {
       // Out-of-position fillers; the weakest-link penalty punishes this.
-      const fillers = squad
+      // Spare goalkeepers never fill outfield slots unless nobody is left.
+      const candidates = squad
         .filter((p) => isAvailable(p) && !chosen.has(p.id) && !pool.includes(p) && p.position !== pos)
-        .sort((a, b) => effectiveRating(b) - effectiveRating(a))
-        .slice(0, count - pool.length);
-      pool.push(...fillers);
+        .sort(
+          (a, b) =>
+            (pos !== 'GK' ? (a.position === 'GK') - (b.position === 'GK') : 0) ||
+            effectiveRating(b) - effectiveRating(a)
+        );
+      pool.push(...candidates.slice(0, count - pool.length));
     }
     for (const p of pool) chosen.add(p.id);
     xi.push(...pool);

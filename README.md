@@ -15,15 +15,28 @@ Mobile-first — open it on a phone-sized viewport for the intended experience.
 
 ## How it works
 
-- Pick one of three clubs: **rich** (easy), **mid-table** (normal), or
-  **broke** (hard). The budget is the difficulty.
+- **Real clubs, real players.** All 20 Premier League clubs with their real
+  2025-26 squads — 400 players sourced from the open
+  [Fantasy Premier League dataset](https://github.com/vaastav/Fantasy-Premier-League).
+  Ratings are derived from FPL prices (normalized per position) and minutes
+  played. Regenerate with `node scripts/build-data.mjs`.
+- Pick one of three clubs: **Chelsea** (rich, easy), **West Ham**
+  (mid-table, normal), or **Burnley** (broke, hard). The budget is the
+  difficulty.
 - Each matchweek: read the inbox, pick your XI (4-4-2), choose a mentality
   (defensive / balanced / attacking), and sim the match. If you're not
   winning at half-time you get **one** intervention: switch mentality, give
   the hairdryer treatment (form boost, morale risk), or hold steady.
-- Transfer windows open pre-season and in January. Buying requires the fee to
-  fit the transfer budget **and** the resulting wage bill to fit the weekly
-  wage budget — the UI tells you exactly which constraint you're breaking.
+- **The market never closes — but the windows do.** Every player in the
+  league is searchable year-round. While a window is open (pre-season,
+  January) deals complete instantly; between them, deals you agree are
+  queued and go through when the January window opens, with funds committed
+  up front and refundable on cancel. After the January deadline you can
+  browse and plan, but nobody signs until summer. A club's top three players
+  carry a hold-out premium. Buying requires the fee to fit the transfer
+  budget **and** the projected wage bill (counting agreed deals) to fit the
+  weekly wage budget — the UI tells you exactly which constraint you're
+  breaking.
 - **The Gem Draw**: if your wage bill is in the league's bottom third (or
   your transfer budget is below the median player value), your scouts unearth
   one mystery signing per window — 25% wonderkid, 50% honest pro, 25% dud.

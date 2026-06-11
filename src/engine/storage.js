@@ -18,7 +18,7 @@ export function loadGame() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const game = JSON.parse(raw);
-    if (game.version !== 1) return null;
+    if (game.version !== 2) return null;
     resetPlayerIds(game.nextPlayerId || 100000);
     return game;
   } catch {
