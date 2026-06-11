@@ -1,5 +1,8 @@
 # Perfect Season
 
+> Also in this repo: **[Luxe League](luxe-league/README.md)** — a Rocket
+> League-inspired 3D supercar-soccer game. `npm run luxe` to play.
+
 An FM-lite football management game for the browser. One league, one season,
 38 matchweeks, playable start-to-finish in 30–45 minutes. The economy is the
 game: wage bills and transfer budgets drive every decision.
